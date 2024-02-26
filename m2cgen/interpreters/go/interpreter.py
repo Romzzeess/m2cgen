@@ -70,6 +70,11 @@ class GoInterpreter(ImperativeToCodeInterpreter,
         if self.with_math_module:
             self._cg.add_dependency("math")
 
+        if self.with_json_module:
+            self._cg.add_dependency("encoding/json")
+            self._cg.add_dependency("log")
+            self._cg.add_dependency("os")
+
         return self._cg.finalize_and_get_generated_code()
 
     def interpret_softmax_expr(self, expr, **kwargs):
@@ -79,3 +84,18 @@ class GoInterpreter(ImperativeToCodeInterpreter,
     def interpret_sigmoid_expr(self, expr, **kwargs):
         self.with_sigmoid_expr = True
         return super().interpret_sigmoid_expr(expr, **kwargs)
+
+    def interpret_json_expr(self, expr, **kwargs):
+        self.with_json_module = True
+        file_name = self._do_interpret(expr.file_name, **kwargs)
+        var_name = self._do_interpret(expr.var_name, **kwargs)
+        content_name = var_name + '_content'
+
+        self._cg.open_file(file_name=file_name, content_name=content_name)
+
+        self._cg.read_json(expr.size, var_name=var_name, content_name=content_name)
+
+        if expr.body is not None:
+            return self._do_interpret(expr.body, **kwargs)
+        else:
+            return self._do_interpret(expr.var_name, **kwargs)

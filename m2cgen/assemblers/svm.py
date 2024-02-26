@@ -1,4 +1,5 @@
 import numpy as np
+import json
 
 from m2cgen import ast
 from m2cgen.assemblers import utils
@@ -78,6 +79,127 @@ class BaseSVMModelAssembler(ModelAssembler):
 
 
 class SklearnSVMModelAssembler(BaseSVMModelAssembler):
+
+    def _assemble_single_output(self, idx=0):
+        support_vectors = self.model.support_vectors_.tolist()
+        with open('sv.json', 'w') as f:
+            json.dump(support_vectors, f)
+
+        coef = self._get_single_coef(idx).tolist()
+        with open('coef.json', 'w') as f:
+            json.dump(coef, f)
+
+        intercept = ast.NumVal(self._get_single_intercept(idx))
+        prob_a = ast.NumVal(self.model._probA)
+        prob_b = ast.NumVal(self.model._probB)
+        gamma = ast.NumVal(- self._get_gamma())
+
+        j_for_incr = utils.add(
+            ast.StrVal('dist'),
+            ast.PowExpr(
+                utils.sub(
+                    ast.FeatureRef('j'),
+                    ast.IndexExpr(ast.IndexExpr(ast.StrVal('sv'), ast.StrVal('i')), ast.StrVal('j'))
+                ),
+                ast.NumVal(2.0)
+            )
+        )
+        j_for_expr = ast.ForExpr(
+            ast.StrVal('j'),
+            ast.IntNumVal(len(self.model.support_vectors_[0])),
+            None,
+            j_for_incr,
+            ast.StrVal('dist')
+        )
+
+        i_for_body = ast.VarExpr(
+            ast.StrVal('dist'),
+            ast.NumVal(0),
+            j_for_expr
+        )
+
+        i_for_incr = utils.add(
+            ast.StrVal('des_func'),
+            utils.mul(
+                ast.ExpExpr(utils.mul(
+                    gamma,
+                    ast.StrVal('dist')
+                )),
+                ast.IndexExpr(
+                    ast.StrVal('coef'),
+                    ast.StrVal('i')
+                )
+            )
+        )
+
+        i_for_expr = ast.ForExpr(
+            ast.StrVal('i'),
+            ast.IntNumVal(len(self._get_single_coef(idx))),
+            i_for_body,
+            i_for_incr,
+            ast.StrVal('des_func')
+        )
+
+        des_func = utils.add(i_for_expr, intercept)
+
+        if self.model.probability:
+            prob_if = ast.VarExpr(
+                ast.StrVal('func_preprob'),
+                utils.add(
+                    utils.mul(
+                        utils.sub(
+                            ast.NumVal(0),
+                            des_func
+                        ),
+                        prob_a
+                    ),
+                    prob_b
+                ),
+                ast.IfExpr(
+                    utils.gt(ast.StrVal('func_preprob'), ast.NumVal(0)),
+                    ast.VarExpr(
+                        ast.StrVal('func_prob'),
+                        utils.sub(
+                            ast.NumVal(1),
+                            utils.div(
+                                ast.ExpExpr(utils.sub(ast.NumVal(0), ast.StrVal('func_preprob'))),
+                                utils.add(
+                                    ast.NumVal(1),
+                                    ast.ExpExpr(utils.sub(ast.NumVal(0), ast.StrVal('func_preprob')))
+                                )
+                            )
+                        ),
+                        None,
+                    ),
+                    ast.VarExpr(
+                        ast.StrVal('func_prob'),
+                        utils.sub(
+                            ast.NumVal(1),
+                            utils.div(
+                                ast.NumVal(1),
+                                utils.add(
+                                    ast.NumVal(1),
+                                    ast.ExpExpr(ast.StrVal('func_preprob'))
+                                )
+                            )
+                        ),
+                        None
+                    ),
+                )
+            )
+        else:
+            prob_if = ast.IfExpr(
+                utils.gt(des_func, ast.NumVal(0)),
+                ast.NumVal(1),
+                ast.NumVal(0)
+            )
+
+        des_fun = ast.VarExpr(ast.StrVal('des_func'), ast.NumVal(0), prob_if)
+        sv = ast.JsonExpr(ast.StrVal('sv'), ast.StrVal('sv'), des_fun)
+
+        return ast.JsonExpr(ast.StrVal('coef'), ast.StrVal('coef'), sv)
+
+
 
     def _get_gamma(self):
         return self.model._gamma

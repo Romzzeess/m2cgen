@@ -52,6 +52,23 @@ class FeatureRef(Expr):
         return hash(self.index)
 
 
+class IndexExpr(Expr):
+    def __init__(self, array_name, index):
+        self.array_name = array_name
+        self.index = index
+
+    def __str__(self):
+        return f"FeatureRef({self.array_name},{self.index})"
+
+    def __eq__(self, other):
+        return (type(other) is FeatureRef and
+                self.index == other.index and
+                self.array_name == other.array_name)
+
+    def __hash__(self):
+        return hash((self.array_name, self.index))
+
+
 class BinExpr(Expr):
     pass
 
@@ -74,6 +91,53 @@ class NumVal(NumExpr):
 
     def __hash__(self):
         return hash(self.value)
+
+
+class IntNumVal(NumExpr):
+    def __init__(self, value, dtype=np.int64):
+        self.value = dtype(value)
+
+    def __str__(self):
+        return f"IntNumVal({self.value})"
+
+    def __eq__(self, other):
+        return type(other) is IntNumVal and self.value == other.value
+
+    def __hash__(self):
+        return hash(self.value)
+
+
+class StrVal(NumExpr):
+    def __init__(self, value, dtype=str):
+        self.value = dtype(value)
+
+    def __str__(self):
+        return f"StrVal({self.value})"
+
+    def __eq__(self, other):
+        return type(other) is StrVal and self.value == other.value
+
+    def __hash__(self):
+        return hash(self.value)
+
+
+class VarExpr(Expr):
+    def __init__(self, name, value, body):
+        self.name = name
+        self.value = value
+        self.body = body
+
+    def __str__(self):
+        return f"StrVal({self.name},{self.value},{self.body})"
+
+    def __eq__(self, other):
+        return (type(other) is StrVal and
+                self.name == other.name and
+                self.value == other.value and
+                self.body == other.body)
+
+    def __hash__(self):
+        return hash(self.name)
 
 
 class AbsExpr(NumExpr):
@@ -247,7 +311,7 @@ class BinNumOpType(Enum):
 class BinNumExpr(NumExpr, BinExpr):
     def __init__(self, left, right, op, to_reuse=False):
         assert left.output_size == 1, "Only scalars are supported"
-        assert right.output_size == 1, "Only scalars are supported"
+        # assert right.output_size == 1, "Only scalars are supported"
 
         self.left = left
         self.right = right
@@ -276,8 +340,8 @@ class VectorExpr(Expr):
 class VectorVal(VectorExpr):
 
     def __init__(self, exprs):
-        assert all(e.output_size == 1 for e in exprs), (
-            "All expressions for VectorVal must be scalar")
+        # assert all(e.output_size == 1 for e in exprs), (
+        #     "All expressions for VectorVal must be scalar")
 
         self.exprs = exprs
         self.output_size = len(exprs)
@@ -434,6 +498,50 @@ class IfExpr(CtrlExpr):
         return hash((self.test, self.body, self.orelse))
 
 
+class ForExpr(CtrlExpr):
+    def __init__(self, iterator_name, range_len, body, incr, for_var_name):
+        self.iterator_name = iterator_name
+        self.range_len = range_len
+        self.body = body
+        self.incr = incr
+        self.for_var_name = for_var_name
+        self.output_size = incr.output_size
+
+    def __str__(self):
+        return f"ForExpr({self.iterator_name},{self.range_len},{self.body},{self.incr},{self.for_var_name})"
+
+    def __eq__(self, other):
+        return (type(other) is ForExpr and
+                self.iterator_name == other.iterator_name and
+                self.range_len == other.test and
+                self.body == other.body and
+                self.incr == other.incr and
+                self.for_var_name == other.for_var_name)
+
+    def __hash__(self):
+        return hash((self.iterator_name, self.range_len, self.body, self.incr, self.for_var_name))
+
+
+class JsonExpr(CtrlExpr):
+    def __init__(self, var_name, file_name, body):
+        self.var_name = var_name
+        self.file_name = file_name
+        self.body = body
+        self.output_size = body.output_size
+
+    def __str__(self):
+        return f"JsonExpr({self.var_name},{self.file_name},{self.body})"
+
+    def __eq__(self, other):
+        return (type(other) is JsonExpr and
+                self.var_name == other.var_name and
+                self.file_name == other.file_name and
+                self.body == other.body)
+
+    def __hash__(self):
+        return hash((self.var_name, self.file_name, self.body))
+
+
 TOTAL_NUMBER_OF_EXPRESSIONS = len(getmembers(modules[__name__], isclass))
 
 
@@ -442,6 +550,7 @@ NESTED_EXPRS_MAPPINGS = [
     ((PowExpr), lambda e: [e.base_expr, e.exp_expr]),
     ((VectorVal, SoftmaxExpr), lambda e: e.exprs),
     ((IfExpr), lambda e: [e.test, e.body, e.orelse]),
+    ((ForExpr), lambda e: [e.iterator_name, e.range_len, e.body]),
     ((AbsExpr, AtanExpr, ExpExpr, IdExpr, LogExpr, Log1pExpr,
       SigmoidExpr, SqrtExpr, TanhExpr),
      lambda e: [e.expr]),
@@ -456,7 +565,7 @@ def count_exprs(expr, exclude_list=None):
     if issubclass(expr_type, excluded):
         init = 0
 
-    if isinstance(expr, (NumVal, FeatureRef)):
+    if isinstance(expr, (NumVal, FeatureRef, ForExpr, StrVal, IndexExpr, VarExpr)):
         return init
 
     for tpes, nested_f in NESTED_EXPRS_MAPPINGS:

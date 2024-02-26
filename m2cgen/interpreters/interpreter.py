@@ -1,5 +1,5 @@
 from m2cgen.assemblers import fallback_expressions
-from m2cgen.ast import BinNumExpr, CompExpr, IfExpr
+from m2cgen.ast import BinNumExpr, CompExpr, IfExpr, ForExpr, JsonExpr
 from m2cgen.interpreters.utils import CachedResult, _get_handler_name
 
 
@@ -40,8 +40,8 @@ class BaseInterpreter:
         if result is not None:
             return result
 
-        if expr in self._cached_expr_results:
-            return self._cached_expr_results[expr].var_name
+        # if expr in self._cached_expr_results:
+        #     return self._cached_expr_results[expr].var_name
 
         handler = self._select_handler(expr)
 
@@ -118,6 +118,7 @@ class ToCodeInterpreter(BaseToCodeInterpreter):
         super().__init__(cg, feature_array_name=feature_array_name)
         self.with_vectors = False
         self.with_math_module = False
+        self.with_json_module = False
 
     def interpret_id_expr(self, expr, **kwargs):
         return self._do_interpret(expr.expr, **kwargs)
@@ -163,10 +164,21 @@ class ToCodeInterpreter(BaseToCodeInterpreter):
     def interpret_num_val(self, expr, **kwargs):
         return self._cg.num_value(value=expr.value)
 
+    def interpret_int_num_val(self, expr, **kwargs):
+        return self._cg.int_num_value(value=expr.value)
+
+    def interpret_str_val(self, expr, **kwargs):
+        return self._cg.str_value(value=expr.value)
+
     def interpret_feature_ref(self, expr, **kwargs):
         return self._cg.array_index_access(
             array_name=self._feature_array_name,
             index=expr.index)
+
+    def interpret_index_expr(self, expr, **kwargs):
+        return self._cg.array_index_access(
+            array_name=self._do_interpret(expr.array_name, **kwargs),
+            index=self._do_interpret(expr.index, **kwargs),)
 
     def interpret_vector_val(self, expr, **kwargs):
         self.with_vectors = True
@@ -282,11 +294,68 @@ class ImperativeToCodeInterpreter(ToCodeInterpreter):
 
         return var_name
 
+    def interpret_for_expr(self, expr, **kwargs):
+        if expr.for_var_name is not None:
+            var_name = self._do_interpret(expr.for_var_name)
+        else:
+            var_name = self._cg.add_var_declaration(expr.output_size)
+
+        def handle_nested_expr(nested):
+            if isinstance(nested, ForExpr):
+                self._do_interpret(nested, for_var_name=var_name, **kwargs)
+            else:
+                nested_result = self._do_interpret(nested, **kwargs)
+                self._cg.add_var_assignment(var_name, nested_result, nested.output_size)
+
+        self._cg.add_for_statement(
+            iterator_name=self._do_interpret(expr.iterator_name, **kwargs),
+            range_len=self._do_interpret(expr.range_len, **kwargs)
+        )
+
+        if expr.body is not None:
+            self._do_interpret(expr.body, **kwargs)
+
+        handle_nested_expr(expr.incr)
+        self._cg.add_block_termination()
+
+        return var_name
+
+    def interpret_var_expr(self, expr, **kwargs):
+        self._cg.add_var_name_declaration(expr.output_size, self._do_interpret(expr.name, **kwargs))
+
+        self._cg.add_var_assignment(
+            var_name=self._do_interpret(expr.name, **kwargs),
+            value=self._do_interpret(expr.value, **kwargs),
+            value_size=expr.output_size
+        )
+        if expr.body is not None:
+            return self._do_interpret(expr.body, **kwargs)
+        else:
+            return self._do_interpret(expr.name, **kwargs)
+
+    def interpret_json_expr(self, expr, **kwargs):
+        self.with_json_module = True
+
+        self._cg.open_file(file_name=self._do_interpret(expr.file_name, **kwargs),)
+
+        self._cg.add_var_assignment(
+            var_name=self._do_interpret(expr.var_name),
+            value=self._cg.read_json(),
+            value_size=expr.output_size
+        )
+
+        if expr.body is not None:
+            return self._do_interpret(expr.body, **kwargs)
+        else:
+            return self._do_interpret(expr.var_name, **kwargs)
+
     def _cache_reused_expr(self, expr, expr_result):
         var_name = self._cg.add_var_declaration(expr.output_size)
         self._cg.add_var_assignment(var_name, expr_result, expr.output_size)
         self._cached_expr_results[expr] = CachedResult(var_name=var_name, expr_result=None)
         return var_name
+
+
 
 
 class FunctionalToCodeInterpreter(ToCodeInterpreter):

@@ -31,6 +31,8 @@ class BaseCodeGenerator:
     """
 
     tpl_num_value = NotImplemented
+    tpl_int_num_value = NotImplemented
+    tpl_str_value = NotImplemented
     tpl_infix_expression = NotImplemented
     tpl_array_index_access = NotImplemented
 
@@ -111,6 +113,12 @@ class BaseCodeGenerator:
     def num_value(self, value):
         return self.tpl_num_value(value=value)
 
+    def int_num_value(self, value):
+        return self.tpl_int_num_value(value=value)
+
+    def str_value(self, value):
+        return self.tpl_str_value(value=value)
+
     def array_index_access(self, array_name, index):
         return self.tpl_array_index_access(array_name=array_name, index=index)
 
@@ -138,6 +146,9 @@ class ImperativeCodeGenerator(BaseCodeGenerator):
     tpl_else_statement = NotImplemented
     tpl_block_termination = NotImplemented
     tpl_var_assignment = NotImplemented
+    tpl_for_statement = NotImplemented
+    tpl_open_file = NotImplemented
+    tpl_read_json = NotImplemented
 
     def reset_state(self):
         super().reset_state()
@@ -163,6 +174,21 @@ class ImperativeCodeGenerator(BaseCodeGenerator):
                 var_type=var_type, var_name=var_name))
         return var_name
 
+    def add_var_name_declaration(self, size, name):
+        var_name = name
+
+        if name == 'sv':
+            var_type = "[][]float64"
+        elif name == 'coef':
+            var_type = "[]float64"
+        else:
+            is_vector = size > 1
+            var_type = self._get_var_declare_type(is_vector)
+        self.add_code_line(
+            self.tpl_var_declaration(
+                var_type=var_type, var_name=var_name))
+        return var_name
+
     def add_if_statement(self, if_def):
         self.add_code_line(self.tpl_if_statement(if_def=if_def))
         self.increase_indent()
@@ -178,6 +204,16 @@ class ImperativeCodeGenerator(BaseCodeGenerator):
 
     def add_var_assignment(self, var_name, value, value_size):
         self.add_code_line(self.tpl_var_assignment(var_name=var_name, value=value))
+
+    def add_for_statement(self, iterator_name, range_len):
+        self.add_code_line(self.tpl_for_statement(iterator_name=iterator_name, range_len=range_len))
+        self.increase_indent()
+
+    def open_file(self, file_name, content_name):
+        self.add_code_line((self.tpl_open_file(file_name=file_name)))
+
+    def read_json(self, size, var_name, content_name):
+        return self.tpl_read_json()
 
     # Helpers
 

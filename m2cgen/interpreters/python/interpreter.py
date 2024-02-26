@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from m2cgen.ast import BinNumOpType
+from m2cgen.ast import BinNumOpType, JsonExpr
 from m2cgen.interpreters.interpreter import ImperativeToCodeInterpreter
 from m2cgen.interpreters.mixins import BinExpressionDepthTrackingMixin, LinearAlgebraMixin, PowExprFunctionMixin
 from m2cgen.interpreters.python.code_generator import PythonCodeGenerator
@@ -70,6 +70,9 @@ class PythonInterpreter(ImperativeToCodeInterpreter,
         if self.with_math_module:
             self._cg.add_dependency("math")
 
+        if self.with_json_module:
+            self._cg.add_dependency("json")
+
         return self._cg.finalize_and_get_generated_code()
 
     def interpret_abs_expr(self, expr, **kwargs):
@@ -84,3 +87,24 @@ class PythonInterpreter(ImperativeToCodeInterpreter,
     def interpret_sigmoid_expr(self, expr, **kwargs):
         self.with_sigmoid_expr = True
         return super().interpret_sigmoid_expr(expr, **kwargs)
+
+    def interpret_json_expr(self, expr, in_func=True, **kwargs):
+        self.with_json_module = True
+
+        self._cg.open_file(file_name=self._do_interpret(expr.file_name, **kwargs),)
+
+        self._cg.add_var_assignment(
+            var_name=self._do_interpret(expr.var_name),
+            value=self._cg.read_json(None, None),
+            value_size=expr.output_size
+        )
+
+        self._cg.decrease_indent()
+
+        if expr.body is not None:
+            if isinstance(expr.body, JsonExpr):
+                return self._do_interpret(expr.body, in_func=False, **kwargs)
+            else:
+                return self._do_interpret(expr.body, **kwargs)
+        else:
+            return self._do_interpret(expr.var_name, **kwargs)

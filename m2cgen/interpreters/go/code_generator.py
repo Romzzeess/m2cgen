@@ -5,6 +5,8 @@ from m2cgen.interpreters.code_generator import CodeTemplate, ImperativeCodeGener
 
 class GoCodeGenerator(ImperativeCodeGenerator):
     tpl_num_value = CodeTemplate("{value}")
+    tpl_int_num_value = CodeTemplate("{value}")
+    tpl_str_value = CodeTemplate("{value}")
     tpl_infix_expression = CodeTemplate("{left} {op} {right}")
     tpl_array_index_access = CodeTemplate("{array_name}[{index}]")
     tpl_else_statement = CodeTemplate("}} else {{")
@@ -13,9 +15,13 @@ class GoCodeGenerator(ImperativeCodeGenerator):
     tpl_return_statement = CodeTemplate("return {value}")
     tpl_if_statement = CodeTemplate("if {if_def} {{")
     tpl_var_assignment = CodeTemplate("{var_name} = {value}")
+    tpl_for_statement = CodeTemplate("for {iterator_name} := 0; {iterator_name} < {range_len}; {iterator_name}++{{")
+    tpl_open_file = CodeTemplate("""{content_name}, err := os.ReadFile("./{file_name}.json")\nif err != nil {{\n    log.Fatal("Error when opening file: ", err)\n}}""")
+    tpl_read_json = CodeTemplate("""err = json.Unmarshal({content_name}, &{var_name})\nif err != nil {{\n    log.Fatal("Error when unmarshall json: ", err)\n}}""")
 
     scalar_type = "float64"
     vector_type = "[]float64"
+    twodem_vector_type = "[][]float64"
 
     def add_function_def(self, name, args, is_scalar_output):
         return_type = self._get_var_declare_type(not is_scalar_output)
@@ -41,3 +47,10 @@ class GoCodeGenerator(ImperativeCodeGenerator):
 
     def vector_init(self, values):
         return f"[]float64{{{', '.join(values)}}}"
+
+    def open_file(self, file_name, content_name):
+        self.add_code_line((self.tpl_open_file(file_name=file_name, content_name=content_name)))
+
+    def read_json(self, size, var_name, content_name):
+        self.add_var_name_declaration(size, var_name)
+        self.add_code_line((self.tpl_read_json(var_name=var_name, content_name=content_name)))
